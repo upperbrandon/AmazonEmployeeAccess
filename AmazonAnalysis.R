@@ -32,17 +32,16 @@ ggplot(data = train_data2) +
 
 # Bake --------------------------------------------------------------------
 
-Columns <- c(
-  "RESOURCE", "MGR_ID", "ROLE_ROLLUP_1", "ROLE_ROLLUP_2", 
-  "ROLE_DEPTNAME", "ROLE_TITLE", "ROLE_FAMILY_DESC", 
-  "ROLE_FAMILY", "ROLE_CODE"
-)
 
 my_recipe <- recipe(ACTION ~ ., data = train_data) %>%
-  step_mutate_at(all_of(Columns), fn = as.factor) %>%
-  step_other(all_of(Columns), threshold = 0.001, other = "other") %>%
-  step_dummy(all_of(Columns), one_hot = TRUE)
+  step_mutate_at(all_numeric_predictors(), fn = factor) %>%
+  step_other(all_nominal_predictors(), threshold = 0.001) %>%
+  step_dummy(all_nominal_predictors())
+
 
 # Apply the recipe
 prep <- prep(my_recipe)
 baked <- bake(prep, new_data = train_data)
+
+
+
