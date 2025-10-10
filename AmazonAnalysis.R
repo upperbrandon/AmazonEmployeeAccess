@@ -40,8 +40,19 @@ my_recipe <- recipe(ACTION ~ ., data = train_data) %>%
 
 
 # Apply the recipe
+
 prep <- prep(my_recipe)
 baked <- bake(prep, new_data = train_data)
 
+logRegModel <- logistic_reg() %>%
+  set_engine("glm")
 
+logReg_workflow <- workflow() %>%
+  add_recipe(my_recipe) %>%
+  add_model(logRegModel) %>%
+  fit(data = train_data)
+
+amazon_predictions <- predict(logReg_workflow,
+                              new_data=test_data,
+                              type=prob)
 
