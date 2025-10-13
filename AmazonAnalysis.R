@@ -65,3 +65,66 @@ kaggle_submission <- test_data %>%
   bind_cols(amazon_predictions)
 
 vroom_write(kaggle_submission, file = "./LinearPreds.csv", delim = ",")
+
+
+
+# Day 2 -------------------------------------------------------------------
+
+# Recipe ------------------------------------------------------------------
+my_recipe <- recipe(ACTION ~ ., data = train_data) %>%
+  step_mutate_at(all_numeric_predictors(), fn = as.factor) %>% 
+  step_other(all_nominal_predictors(), threshold = 0.001) %>% 
+  step_embed(all_nominal_predictors(), outcome = vars(ACTION)) %>%  # <-- target encoding
+  step_zv(all_predictors())  # remove zero-variance columns
+
+# Model -------------------------------------------------------------------
+logRegModel <- logistic_reg(
+  penalty = tune(),  # lambda
+  mixture = tune()   # alpha
+) %>%
+  set_engine("glmnet") %>%
+  set_mode("classification")
+
+logReg_workflow <- workflow() %>%
+  add_recipe(my_recipe) %>%
+  add_model(logRegModel)
+
+set.seed(123)
+amazon_folds <- vfold_cv(train_data, v = 5, strata = ACTION)
+
+lambda_grid <- grid_regular(
+  penalty(range = c(-4, 0)),  # log10 scale: 1e-4 to 1
+  mixture(range = c(0, 1)),
+  levels = 10
+)
+
+
+# Workflow ----------------------------------------------------------------
+
+tune_results <- tune_grid(
+  logReg_workflow,
+  resamples = amazon_folds,
+  grid = lambda_grid,
+  metrics = metric_set(roc_auc)
+)
+
+best_params <- select_best(tune_results, metric =  "roc_auc")
+
+final_wf <- finalize_workflow(logReg_workflow, best_params)
+
+final_fit <- final_wf %>%
+  fit(data = train_data)
+
+# Predict -----------------------------------------------------------------
+amazon_predictions <- predict(final_fit,
+                              new_data = test_data,
+                              type = "prob") %>%
+  select(.pred_1) %>%
+  rename(ACTION = .pred_1)
+
+kaggle_submission <- test_data %>%
+  select(id) %>%
+  bind_cols(amazon_predictions)
+
+# Create submission -------------------------------------------------------
+vroom_write(kaggle_submission, file = "./TargetEncoded_ElasticNet_Preds.csv", delim = ",")
