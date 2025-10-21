@@ -128,3 +128,65 @@ kaggle_submission <- test_data %>%
 
 # Create submission -------------------------------------------------------
 vroom_write(kaggle_submission, file = "./TargetEncoded_ElasticNet_Preds.csv", delim = ",")
+
+
+
+# Random Forest -----------------------------------------------------------
+
+my_mod <- rand_forest(
+  mtry = tune(),
+  min_n = tune(),
+  trees = 500
+) %>%
+  set_engine("ranger", importance = "impurity") %>%
+  set_mode("classification")
+
+# Smaller tuning grid: only 4 combos total
+grid_of_tuning_params <- grid_regular(
+  mtry(range = c(2, 6)),   
+  min_n(range = c(2, 10)), 
+  levels = 2               
+)
+
+# Use CV
+set.seed(123)
+folds <- vfold_cv(train_data, v = 3, strata = ACTION)
+
+rf_workflow <- workflow() %>%
+  add_recipe(my_recipe) %>%
+  add_model(my_mod)
+
+# Tune
+CV_results <- rf_workflow %>%
+  tune_grid(
+    resamples = folds,
+    grid = grid_of_tuning_params,
+    metrics = metric_set(roc_auc),
+    control = control_grid(save_pred = FALSE, verbose = FALSE)
+  )
+
+bestTune <- select_best(CV_results, metric = "roc_auc")
+
+final_wf <- rf_workflow %>%
+  finalize_workflow(bestTune) %>%
+  fit(data = train_data)
+
+# Predict
+amazon_predictions <- predict(
+  final_wf,
+  new_data = test_data,
+  type = "prob"
+) %>%
+  select(.pred_1) %>%
+  rename(ACTION = .pred_1)
+
+kaggle_submission <- test_data %>%
+  select(id) %>%
+  bind_cols(amazon_predictions)
+
+vroom_write(
+  kaggle_submission,
+  file = "./RandomForest_FAST_Preds.csv",
+  delim = ","
+)
+
