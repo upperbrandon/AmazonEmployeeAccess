@@ -186,7 +186,34 @@ kaggle_submission <- test_data %>%
 
 vroom_write(
   kaggle_submission,
-  file = "./RandomForest_FAST_Preds.csv",
+  file = "./RandomForestPreds.csv",
   delim = ","
 )
 
+
+# K nearest neighbors -----------------------------------------------------
+
+library(tidymodels)
+
+knn_model <- nearest_neighbor(neighbors = 5) %>%
+  set_mode("classification") %>%
+  set_engine("kknn")
+
+knn_wf <- workflow() %>%
+  add_recipe(my_recipe) %>%
+  add_model(knn_model)
+
+knn_fit <- knn_wf %>%
+  fit(data = train_data)
+
+amazon_predictions <- predict(knn_fit, new_data = test_data, type = "prob")
+
+kaggle_submission <- test_data %>%
+  select(id) %>%
+  bind_cols(amazon_predictions)
+
+vroom_write(
+  kaggle_submission,
+  file = "./RandomForest_FAST_Preds.csv",
+  delim = ","
+)
