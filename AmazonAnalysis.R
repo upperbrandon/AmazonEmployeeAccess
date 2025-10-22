@@ -206,7 +206,9 @@ knn_wf <- workflow() %>%
 knn_fit <- knn_wf %>%
   fit(data = train_data)
 
-amazon_predictions <- predict(knn_fit, new_data = test_data, type = "prob")
+amazon_predictions <- predict(knn_fit, new_data = test_data, type = "prob") %>%
+  select(.pred_1) %>%
+  rename(ACTION = .pred_1)
 
 kaggle_submission <- test_data %>%
   select(id) %>%
@@ -214,6 +216,6 @@ kaggle_submission <- test_data %>%
 
 vroom_write(
   kaggle_submission,
-  file = "./RandomForest_FAST_Preds.csv",
+  file = "./Knearest.csv",
   delim = ","
 )
