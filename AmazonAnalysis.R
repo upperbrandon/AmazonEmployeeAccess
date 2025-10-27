@@ -219,3 +219,79 @@ vroom_write(
   file = "./Knearest.csv",
   delim = ","
 )
+
+
+# Neural Nets -------------------------------------------------------------
+
+library(tidymodels)
+
+nn_recipe <- recipe(ACTION ~ ., data = train_data) %>%
+  step_dummy(all_nominal_predictors()) %>%
+  step_normalize(all_numeric_predictors())
+
+nn_model <- mlp(
+  hidden_units = tune(),
+  penalty = tune(),   # optional L2 regularization
+  epochs = 100
+) %>%
+  set_engine("nnet") %>%
+  set_mode("classification")
+
+nn_wf <- workflow() %>%
+  add_recipe(nn_recipe) %>%
+  add_model(nn_model)
+
+set.seed(123)
+nn_folds <- vfold_cv(train_data, v = 3, strata = ACTION)
+
+nn_grid <- grid_regular(
+  hidden_units(range = c(1, 10)),
+  penalty(range = c(-4, -1)),  
+  levels = 5
+)
+
+nn_tune_results <- tune_grid(
+  nn_wf,
+  resamples = nn_folds,
+  grid = nn_grid,
+  metrics = metric_set(roc_auc, accuracy)
+)
+
+best_nn <- select_best(nn_tune_results,metric = "roc_auc")
+
+final_nn_wf <- finalize_workflow(nn_wf, best_nn) %>%
+  fit(data = train_data)
+
+nn_predictions <- predict(final_nn_wf, new_data = test_data, type = "prob") %>%
+  select(.pred_1) %>%
+  rename(ACTION = .pred_1)
+
+kaggle_submission <- test_data %>%
+  select(id) %>%
+  bind_cols(nn_predictions)
+
+vroom_write(kaggle_submission, file = "./NeuralNetTidymodels.csv", delim = ",")
+
+library(tidymodels)
+library(ggplot2)
+
+nn_tune_results %>%
+  collect_metrics() %>%
+  filter(.metric == "accuracy") %>%
+  ggplot(aes(x = hidden_units, y = mean)) +
+  geom_point() +
+  labs(
+    title = "NN Accuracy vs Hidden Units",
+    x = "Hidden Units",
+    y = "Mean Accuracy"
+  )
+
+
+library(dplyr)
+
+nn_metrics <- nn_tune_results %>%
+  collect_metrics() %>%
+  filter(.metric == "accuracy") %>%
+  mutate(mean = as.numeric(mean),
+         hidden_units = as.numeric(hidden_units))
+
