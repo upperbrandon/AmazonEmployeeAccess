@@ -9,6 +9,8 @@ library(glmnet)
 library(ranger)
 library(ggmosaic)
 library(embed)
+library(discrm)
+library(tensorflow)
 
 # Read and Set ------------------------------------------------------------
 setwd("~/GitHub/AmazonEmployeeAccess")
@@ -37,6 +39,13 @@ my_recipe0 <- recipe(ACTION ~ ., data = train_data) %>%
   step_mutate_at(all_numeric_predictors(), fn = as.factor) %>%
   step_other(all_nominal_predictors(), threshold = 0.001) %>%
   step_dummy(all_nominal_predictors()) 
+
+# The original
+my_recipe <- recipe(ACTION ~ ., data = train_data) %>%
+  step_mutate_at(all_numeric_predictors(), fn = as.factor) %>% 
+  step_other(all_nominal_predictors(), threshold = 0.001) %>% 
+  step_embed(all_nominal_predictors(), outcome = vars(ACTION)) %>%
+  step_zv(all_predictors())
 
 my_recipe <- recipe(ACTION ~ ., data = train_data) %>%
   step_mutate_at(all_numeric_predictors(), fn = as.factor) %>% 
