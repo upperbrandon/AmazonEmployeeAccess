@@ -221,6 +221,50 @@ vroom_write(
 )
 
 
+# Bayes -------------------------------------------------------------------
+
+
+library(tidymodels)
+library(naivebayes)
+library(discrim)
+library(vroom)
+
+nb_model <- naive_Bayes(Laplace = tune(), smoothness = tune()) %>%
+  set_mode("classification") %>%
+  set_engine("naivebayes")
+
+nb_wf <- workflow() %>%
+  add_recipe(my_recipe) %>%
+  add_model(nb_model)
+
+myFolds <- vfold_cv(train_data, v = 3)
+
+nb_tuned <- tune_grid(
+  nb_wf,
+  resamples = myFolds,
+  grid = 2
+)
+
+best_nb <- select_best(nb_tuned, metric = "accuracy")
+
+final_nb_wf <- finalize_workflow(nb_wf, best_nb)
+
+fit_nb <- fit(final_nb_wf, data = train_data)
+
+amazon_predictions <- predict(fit_nb, new_data = test_data, type = "prob") %>%
+  select(.pred_1) %>%
+  rename(ACTION = .pred_1)
+
+kaggle_submission <- test_data %>%
+  select(id) %>%
+  bind_cols(amazon_predictions)
+
+vroom_write(
+  kaggle_submission,
+  file = "./NBayest.csv",
+  delim = ","
+)
+
 # Neural Nets -------------------------------------------------------------
 
 library(tidymodels)
