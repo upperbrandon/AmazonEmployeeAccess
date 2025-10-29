@@ -25,19 +25,26 @@ train_data2 <- train_data %>%
     ROLE_ROLLUP_1 = as.factor(ROLE_ROLLUP_1),
     ROLE_ROLLUP_2 = as.factor(ROLE_ROLLUP_2)
   )
-
-ggplot(train_data2) +
-  geom_mosaic(aes(weight = 1, x = product(ROLE_ROLLUP_1), fill = ACTION))
-
-ggplot(train_data2) +
-  geom_mosaic(aes(weight = 1, x = product(ROLE_ROLLUP_2), fill = ACTION))
+# 
+# ggplot(train_data2) +
+#   geom_mosaic(aes(weight = 1, x = product(ROLE_ROLLUP_1), fill = ACTION))
+# 
+# ggplot(train_data2) +
+#   geom_mosaic(aes(weight = 1, x = product(ROLE_ROLLUP_2), fill = ACTION))
 
 # Recipe ------------------------------------------------------------------
-my_recipe <- recipe(ACTION ~ ., data = train_data) %>%
+my_recipe0 <- recipe(ACTION ~ ., data = train_data) %>%
   step_mutate_at(all_numeric_predictors(), fn = as.factor) %>%
   step_other(all_nominal_predictors(), threshold = 0.001) %>%
-  step_dummy(all_nominal_predictors())
+  step_dummy(all_nominal_predictors()) 
 
+my_recipe <- recipe(ACTION ~ ., data = train_data) %>%
+  step_mutate_at(all_numeric_predictors(), fn = as.factor) %>% 
+  step_other(all_nominal_predictors(), threshold = 0.001) %>% 
+  step_embed(all_nominal_predictors(), outcome = vars(ACTION)) %>%
+  step_zv(all_predictors()) %>%
+  step_normalize(all_predictors()) %>%
+  step_pca(all_predictors(), threshold=.6)
 
 # Prep and Bake -----------------------------------------------------------
 Prepped <- prep(my_recipe)
@@ -69,13 +76,6 @@ vroom_write(kaggle_submission, file = "./LinearPreds.csv", delim = ",")
 
 
 # Day 2 -------------------------------------------------------------------
-
-# Recipe ------------------------------------------------------------------
-my_recipe <- recipe(ACTION ~ ., data = train_data) %>%
-  step_mutate_at(all_numeric_predictors(), fn = as.factor) %>% 
-  step_other(all_nominal_predictors(), threshold = 0.001) %>% 
-  step_embed(all_nominal_predictors(), outcome = vars(ACTION)) %>%  # <-- target encoding
-  step_zv(all_predictors())  # remove zero-variance columns
 
 # Model -------------------------------------------------------------------
 logRegModel <- logistic_reg(
