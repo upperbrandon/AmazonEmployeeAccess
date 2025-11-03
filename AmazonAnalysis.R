@@ -129,9 +129,9 @@ vroom_write(
 
 # Poly --------------------------------------------------------------------
 
-svmPoly <- svm_poly(degree = tune(), cost = tune()) %>%
+svmPoly <- svm_poly(degree = 1, cost = 0.0131) %>%
   set_mode("classification") %>%
-  set_engine("kernlab",maxiter = 50000,tol = 1e-3)
+  set_engine("kernlab")
 
 svm_wf <- workflow() %>%
   add_recipe(my_recipe) %>%
@@ -318,7 +318,7 @@ grid_of_tuning_params <- grid_regular(
 )
 
 # Use CV
-set.seed(123)
+
 folds <- vfold_cv(train_data, v = 3, strata = ACTION)
 
 rf_workflow <- workflow() %>%
