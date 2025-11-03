@@ -76,7 +76,10 @@ baked_train <- bake(Prepped, new_data = train_data)
 # SVM ---------------------------------------------------------------------
 
 
-# SVM Models --------------------------------------------------------------
+
+# Radial ------------------------------------------------------------------
+
+
 
 svmRadial <- svm_rbf(
   rbf_sigma = tune(),  # kernel width
@@ -119,13 +122,101 @@ kaggle_svm_submission <- test_data %>%
 
 vroom_write(
   kaggle_svm_submission,
-  file = "./SVM_Poly.csv",
+  file = "./SVM_Radi.csv",
   delim = ","
 )
 
 
+# Poly --------------------------------------------------------------------
+
+svmPoly <- svm_poly(degree = tune(), cost = tune()) %>%
+  set_mode("classification") %>%
+  set_engine("kernlab",maxiter = 50000,tol = 1e-3)
+
+svm_wf <- workflow() %>%
+  add_recipe(my_recipe) %>%
+  add_model(svmPoly)
+
+myFolds <- vfold_cv(train_data, v = 2)
+# Tune the SVM model ------------------------------------------------------
+svm_tuned <- tune_grid(
+  svm_wf,
+  resamples = myFolds,
+  grid = 2,
+  metrics = metric_set(accuracy)
+)
+
+# Select the best parameters ----------------------------------------------
+best_svm <- select_best(svm_tuned, metric = "accuracy")
+
+# Finalize workflow with best parameters ---------------------------------
+final_svm_wf <- finalize_workflow(svm_wf, best_svm)
+
+# Fit final model on full training data ----------------------------------
+fit_svm <- fit(final_svm_wf, data = train_data)
+
+# Predict on test data ---------------------------------------------------
+svm_predictions <- predict(fit_svm, new_data = test_data, type = "prob") %>%
+  select(.pred_1) %>%
+  rename(ACTION = .pred_1)
+
+# Prepare SVM submission -------------------------------------------------
+kaggle_svm_submission <- test_data %>%
+  select(id) %>%
+  bind_cols(svm_predictions)
+
+vroom_write(
+  kaggle_svm_submission,
+  file = "./SVM_Poly.csv",
+  delim = ","
+)
+
+# Linear ------------------------------------------------------------------
 
 
+svmLinear <- svm_linear(cost = tune()) %>%
+  set_mode("classification") %>%
+  set_engine("kernlab", maxiter = 50000)
+
+
+
+svm_wf <- workflow() %>%
+  add_recipe(my_recipe) %>%
+  add_model(svmLinear)
+
+myFolds <- vfold_cv(train_data, v = 2)
+# Tune the SVM model ------------------------------------------------------
+svm_tuned <- tune_grid(
+  svm_wf,
+  resamples = myFolds,
+  grid = 2,
+  metrics = metric_set(accuracy)
+)
+
+# Select the best parameters ----------------------------------------------
+best_svm <- select_best(svm_tuned, metric = "accuracy")
+
+# Finalize workflow with best parameters ---------------------------------
+final_svm_wf <- finalize_workflow(svm_wf, best_svm)
+
+# Fit final model on full training data ----------------------------------
+fit_svm <- fit(final_svm_wf, data = train_data)
+
+# Predict on test data ---------------------------------------------------
+svm_predictions <- predict(fit_svm, new_data = test_data, type = "prob") %>%
+  select(.pred_1) %>%
+  rename(ACTION = .pred_1)
+
+# Prepare SVM submission -------------------------------------------------
+kaggle_svm_submission <- test_data %>%
+  select(id) %>%
+  bind_cols(svm_predictions)
+
+vroom_write(
+  kaggle_svm_submission,
+  file = "./SVM_Linear.csv",
+  delim = ","
+)
 
 
 # Model -------------------------------------------------------------------
