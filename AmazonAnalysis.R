@@ -9,8 +9,8 @@ library(glmnet)
 library(ranger)
 library(ggmosaic)
 library(embed)
-library(discrm)
 library(tensorflow)
+library(themis) 
 
 # Read and Set ------------------------------------------------------------
 setwd("~/GitHub/AmazonEmployeeAccess")
@@ -53,11 +53,80 @@ my_recipe <- recipe(ACTION ~ ., data = train_data) %>%
   step_embed(all_nominal_predictors(), outcome = vars(ACTION)) %>%
   step_zv(all_predictors()) %>%
   step_normalize(all_predictors()) %>%
-  step_pca(all_predictors(), threshold=.6)
+  step_pca(all_predictors(), threshold=.9)
+
+
+# Smote Recipe ------------------------------------------------------------
+
+my_recipe <- recipe(ACTION ~ ., data = train_data) %>%
+  step_mutate_at(all_numeric_predictors(), fn = as.factor) %>%
+  step_other(all_nominal_predictors(), threshold = 0.001) %>%
+  step_embed(all_nominal_predictors(), outcome = vars(ACTION)) %>%
+  step_smote(ACTION, neighbors = 5) %>%  # Adjust 'neighbors' as needed
+  step_zv(all_predictors()) %>%
+  step_normalize(all_predictors()) %>%
+  step_pca(all_predictors(), threshold = 0.9)
+
 
 # Prep and Bake -----------------------------------------------------------
 Prepped <- prep(my_recipe)
 baked_train <- bake(Prepped, new_data = train_data)
+
+
+# SVM ---------------------------------------------------------------------
+
+
+# SVM Models --------------------------------------------------------------
+
+svmRadial <- svm_rbf(
+  rbf_sigma = tune(),  # kernel width
+  cost = tune()        # regularization strength
+) %>%
+  set_mode("classification") %>%
+  set_engine("kernlab", maxiter = 50000)
+
+svm_wf <- workflow() %>%
+  add_recipe(my_recipe) %>%
+  add_model(svmRadial)
+
+myFolds <- vfold_cv(train_data, v = 2)
+# Tune the SVM model ------------------------------------------------------
+svm_tuned <- tune_grid(
+  svm_wf,
+  resamples = myFolds,
+  grid = 2,
+  metrics = metric_set(accuracy)
+)
+
+# Select the best parameters ----------------------------------------------
+best_svm <- select_best(svm_tuned, metric = "accuracy")
+
+# Finalize workflow with best parameters ---------------------------------
+final_svm_wf <- finalize_workflow(svm_wf, best_svm)
+
+# Fit final model on full training data ----------------------------------
+fit_svm <- fit(final_svm_wf, data = train_data)
+
+# Predict on test data ---------------------------------------------------
+svm_predictions <- predict(fit_svm, new_data = test_data, type = "prob") %>%
+  select(.pred_1) %>%
+  rename(ACTION = .pred_1)
+
+# Prepare SVM submission -------------------------------------------------
+kaggle_svm_submission <- test_data %>%
+  select(id) %>%
+  bind_cols(svm_predictions)
+
+vroom_write(
+  kaggle_svm_submission,
+  file = "./SVM_Poly.csv",
+  delim = ","
+)
+
+
+
+
+
 
 # Model -------------------------------------------------------------------
 logRegModel <- logistic_reg() %>%
