@@ -12,6 +12,15 @@ library(embed)
 library(tensorflow)
 library(themis) 
 
+# Read and Set ------------------------------------------------------------
+setwd("~/GitHub/AmazonEmployeeAccess")
+train_data <- vroom("train.csv")
+test_data  <- vroom("test.csv")
+
+# Ensure ACTION is a factor -----------------------------------------------
+train_data <- train_data %>%
+  mutate(ACTION = factor(ACTION))
+
 # Recipe ------------------------------------------------------------------
 my_recipe0 <- recipe(ACTION ~ ., data = train_data) %>%
   step_mutate_at(all_numeric_predictors(), fn = as.factor) %>%
@@ -25,7 +34,7 @@ my_recipe <- recipe(ACTION ~ ., data = train_data) %>%
   step_embed(all_nominal_predictors(), outcome = vars(ACTION)) %>%
   step_zv(all_predictors())
 
-my_recipe <- recipe(ACTION ~ ., data = train_data) %>%
+my_recipe2 <- recipe(ACTION ~ ., data = train_data) %>%
   step_mutate_at(all_numeric_predictors(), fn = as.factor) %>% 
   step_other(all_nominal_predictors(), threshold = 0.001) %>% 
   step_embed(all_nominal_predictors(), outcome = vars(ACTION)) %>%
@@ -33,14 +42,6 @@ my_recipe <- recipe(ACTION ~ ., data = train_data) %>%
   step_normalize(all_predictors()) %>%
   step_pca(all_predictors(), threshold=.9)
 
-# Read and Set ------------------------------------------------------------
-setwd("~/GitHub/AmazonEmployeeAccess")
-train_data <- vroom("train.csv")
-test_data  <- vroom("test.csv")
-
-# Ensure ACTION is a factor -----------------------------------------------
-train_data <- train_data %>%
-  mutate(ACTION = factor(ACTION))
 
 
 # Random Forest -----------------------------------------------------------
@@ -48,7 +49,7 @@ train_data <- train_data %>%
 my_mod <- rand_forest(
   mtry = tune(),
   min_n = tune(),
-  trees = 100
+  trees = 1000
 ) %>%
   set_engine("ranger", importance = "impurity") %>%
   set_mode("classification")
@@ -57,12 +58,12 @@ my_mod <- rand_forest(
 grid_of_tuning_params <- grid_regular(
   mtry(range = c(2, 6)),   
   min_n(range = c(2, 10)), 
-  levels = 2               
+  levels = 50               
 )
 
 # Use CV
 
-folds <- vfold_cv(train_data, v = 3, strata = ACTION)
+folds <- vfold_cv(train_data, v = 5, strata = ACTION)
 
 rf_workflow <- workflow() %>%
   add_recipe(my_recipe) %>%
