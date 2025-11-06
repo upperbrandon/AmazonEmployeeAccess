@@ -12,28 +12,6 @@ library(embed)
 library(tensorflow)
 library(themis) 
 
-# Read and Set ------------------------------------------------------------
-setwd("~/GitHub/AmazonEmployeeAccess")
-train_data <- vroom("train.csv")
-test_data  <- vroom("test.csv")
-
-# Ensure ACTION is a factor -----------------------------------------------
-train_data <- train_data %>%
-  mutate(ACTION = factor(ACTION))
-
-# Exploratory: Mosaic Plots -----------------------------------------------
-train_data2 <- train_data %>%
-  mutate(
-    ROLE_ROLLUP_1 = as.factor(ROLE_ROLLUP_1),
-    ROLE_ROLLUP_2 = as.factor(ROLE_ROLLUP_2)
-  )
-# 
-# ggplot(train_data2) +
-#   geom_mosaic(aes(weight = 1, x = product(ROLE_ROLLUP_1), fill = ACTION))
-# 
-# ggplot(train_data2) +
-#   geom_mosaic(aes(weight = 1, x = product(ROLE_ROLLUP_2), fill = ACTION))
-
 # Recipe ------------------------------------------------------------------
 my_recipe0 <- recipe(ACTION ~ ., data = train_data) %>%
   step_mutate_at(all_numeric_predictors(), fn = as.factor) %>%
@@ -54,6 +32,92 @@ my_recipe <- recipe(ACTION ~ ., data = train_data) %>%
   step_zv(all_predictors()) %>%
   step_normalize(all_predictors()) %>%
   step_pca(all_predictors(), threshold=.9)
+
+# Read and Set ------------------------------------------------------------
+setwd("~/GitHub/AmazonEmployeeAccess")
+train_data <- vroom("train.csv")
+test_data  <- vroom("test.csv")
+
+# Ensure ACTION is a factor -----------------------------------------------
+train_data <- train_data %>%
+  mutate(ACTION = factor(ACTION))
+
+
+# Random Forest -----------------------------------------------------------
+
+my_mod <- rand_forest(
+  mtry = tune(),
+  min_n = tune(),
+  trees = 100
+) %>%
+  set_engine("ranger", importance = "impurity") %>%
+  set_mode("classification")
+
+# Smaller tuning grid: only 4 combos total
+grid_of_tuning_params <- grid_regular(
+  mtry(range = c(2, 6)),   
+  min_n(range = c(2, 10)), 
+  levels = 2               
+)
+
+# Use CV
+
+folds <- vfold_cv(train_data, v = 3, strata = ACTION)
+
+rf_workflow <- workflow() %>%
+  add_recipe(my_recipe) %>%
+  add_model(my_mod)
+
+# Tune
+CV_results <- rf_workflow %>%
+  tune_grid(
+    resamples = folds,
+    grid = grid_of_tuning_params,
+    metrics = metric_set(roc_auc),
+    control = control_grid(save_pred = FALSE, verbose = FALSE)
+  )
+
+bestTune <- select_best(CV_results, metric = "roc_auc")
+
+final_wf <- rf_workflow %>%
+  finalize_workflow(bestTune) %>%
+  fit(data = train_data)
+
+# Predict
+amazon_predictions <- predict(
+  final_wf,
+  new_data = test_data,
+  type = "prob"
+) %>%
+  select(.pred_1) %>%
+  rename(ACTION = .pred_1)
+
+kaggle_submission <- test_data %>%
+  select(id) %>%
+  bind_cols(amazon_predictions)
+
+vroom_write(
+  kaggle_submission,
+  file = "./RandomForestPreds1.csv",
+  delim = ","
+)
+
+
+
+# Exploratory: Mosaic Plots -----------------------------------------------
+train_data2 <- train_data %>%
+  mutate(
+    ROLE_ROLLUP_1 = as.factor(ROLE_ROLLUP_1),
+    ROLE_ROLLUP_2 = as.factor(ROLE_ROLLUP_2)
+  )
+# 
+# ggplot(train_data2) +
+#   geom_mosaic(aes(weight = 1, x = product(ROLE_ROLLUP_1), fill = ACTION))
+# 
+# ggplot(train_data2) +
+#   geom_mosaic(aes(weight = 1, x = product(ROLE_ROLLUP_2), fill = ACTION))
+
+
 
 
 # Smote Recipe ------------------------------------------------------------
@@ -298,66 +362,6 @@ kaggle_submission <- test_data %>%
 # Create submission -------------------------------------------------------
 vroom_write(kaggle_submission, file = "./TargetEncoded_ElasticNet_Preds.csv", delim = ",")
 
-
-
-# Random Forest -----------------------------------------------------------
-
-my_mod <- rand_forest(
-  mtry = tune(),
-  min_n = tune(),
-  trees = 500
-) %>%
-  set_engine("ranger", importance = "impurity") %>%
-  set_mode("classification")
-
-# Smaller tuning grid: only 4 combos total
-grid_of_tuning_params <- grid_regular(
-  mtry(range = c(2, 6)),   
-  min_n(range = c(2, 10)), 
-  levels = 2               
-)
-
-# Use CV
-
-folds <- vfold_cv(train_data, v = 3, strata = ACTION)
-
-rf_workflow <- workflow() %>%
-  add_recipe(my_recipe) %>%
-  add_model(my_mod)
-
-# Tune
-CV_results <- rf_workflow %>%
-  tune_grid(
-    resamples = folds,
-    grid = grid_of_tuning_params,
-    metrics = metric_set(roc_auc),
-    control = control_grid(save_pred = FALSE, verbose = FALSE)
-  )
-
-bestTune <- select_best(CV_results, metric = "roc_auc")
-
-final_wf <- rf_workflow %>%
-  finalize_workflow(bestTune) %>%
-  fit(data = train_data)
-
-# Predict
-amazon_predictions <- predict(
-  final_wf,
-  new_data = test_data,
-  type = "prob"
-) %>%
-  select(.pred_1) %>%
-  rename(ACTION = .pred_1)
-
-kaggle_submission <- test_data %>%
-  select(id) %>%
-  bind_cols(amazon_predictions)
-
-vroom_write(
-  kaggle_submission,
-  file = "./RandomForestPreds.csv",
-  delim = ","
-)
 
 
 # K nearest neighbors -----------------------------------------------------
