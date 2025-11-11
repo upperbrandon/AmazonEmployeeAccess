@@ -22,41 +22,18 @@ train_data <- train_data %>%
   mutate(ACTION = factor(ACTION))
 
 # Recipe ------------------------------------------------------------------
-my_recipe0 <- recipe(ACTION ~ ., data = train_data) %>%
-  step_mutate_at(all_numeric_predictors(), fn = as.factor) %>%
-  step_other(all_nominal_predictors(), threshold = 0.001) %>%
-  step_dummy(all_nominal_predictors()) 
-
-# The original
-my_recipe1 <- recipe(ACTION ~ ., data = train_data) %>%
-  step_mutate_at(all_numeric_predictors(), fn = as.factor) %>% 
-  step_other(all_nominal_predictors(), threshold = 0.001) %>% 
-  step_lencode(all_nominal_predictors(), outcome = vars(ACTION)) %>%
-  step_zv(all_predictors())
-
-# TA guided
 my_recipe <- recipe(ACTION ~ ., data = train_data) %>%
   step_mutate_at(all_numeric_predictors(), fn = as.factor) %>% 
   step_other(all_nominal_predictors(), threshold = 0.001) %>% 
-  step_embed(all_nominal_predictors(), outcome = vars(ACTION)) %>%
+  step_lencode(all_nominal_predictors(), outcome = vars(ACTION), smooth = FALSE) %>%
   step_zv(all_predictors())
-
-my_recipe2 <- recipe(ACTION ~ ., data = train_data) %>%
-  step_mutate_at(all_numeric_predictors(), fn = as.factor) %>% 
-  step_other(all_nominal_predictors(), threshold = 0.001) %>% 
-  step_embed(all_nominal_predictors(), outcome = vars(ACTION)) %>%
-  step_zv(all_predictors()) %>%
-  step_normalize(all_predictors()) %>%
-  step_pca(all_predictors(), threshold=.9)
-
-
 
 # Random Forest -----------------------------------------------------------
 
 my_mod <- rand_forest(
   mtry = tune(),
   min_n = tune(),
-  trees = 1000
+  trees = 500
 ) %>%
   set_engine("ranger", importance = "impurity") %>%
   set_mode("classification")
@@ -65,7 +42,7 @@ my_mod <- rand_forest(
 grid_of_tuning_params <- grid_regular(
   mtry(range = c(2, 6)),   
   min_n(range = c(2, 10)), 
-  levels = 50               
+  levels = 5              
 )
 
 # Use CV
@@ -109,6 +86,75 @@ vroom_write(
   file = "./RandomForestPreds1.csv",
   delim = ","
 )
+
+
+
+
+
+# For Loop for variety ----------------------------------------------------
+
+library(vroom)
+
+for (i in 1:5) {
+  
+  my_mod <- rand_forest(
+    mtry = tune(),
+    min_n = tune(),
+    trees = 500
+  ) %>%
+    set_engine("ranger", importance = "impurity") %>%
+    set_mode("classification")
+  
+  # Smaller tuning grid: only 4 combos total
+  grid_of_tuning_params <- grid_regular(
+    mtry(range = c(2, 6)),   
+    min_n(range = c(2, 10)), 
+    levels = 5              
+  )
+  
+  # Use CV
+  
+  folds <- vfold_cv(train_data, v = 5, strata = ACTION)
+  
+  rf_workflow <- workflow() %>%
+    add_recipe(my_recipe) %>%
+    add_model(my_mod)
+  
+  # Tune
+  CV_results <- rf_workflow %>%
+    tune_grid(
+      resamples = folds,
+      grid = grid_of_tuning_params,
+      metrics = metric_set(roc_auc),
+      control = control_grid(save_pred = FALSE, verbose = FALSE)
+    )
+  
+  bestTune <- select_best(CV_results, metric = "roc_auc")
+  
+  final_wf <- rf_workflow %>%
+    finalize_workflow(bestTune) %>%
+    fit(data = train_data)
+  
+  # Predict
+  amazon_predictions <- predict(
+    final_wf,
+    new_data = test_data,
+    type = "prob"
+  ) %>%
+    select(.pred_1) %>%
+    rename(ACTION = .pred_1)
+  
+  kaggle_submission <- test_data %>%
+    select(id) %>%
+    bind_cols(amazon_predictions)
+  
+  file_name <- paste0("./RandomForestPreds", i, ".csv")
+  vroom_write(
+    kaggle_submission,
+    file = file_name,
+    delim = ","
+  )
+}
 
 
 
@@ -519,4 +565,26 @@ nn_metrics <- nn_tune_results %>%
   filter(.metric == "accuracy") %>%
   mutate(mean = as.numeric(mean),
          hidden_units = as.numeric(hidden_units))
+
+
+
+# Other recipes -----------------------------------------------------------
+my_recipe0 <- recipe(ACTION ~ ., data = train_data) %>%
+  step_mutate_at(all_numeric_predictors(), fn = as.factor) %>%
+  step_other(all_nominal_predictors(), threshold = 0.001) %>%
+  step_dummy(all_nominal_predictors()) 
+
+my_recipe1 <- recipe(ACTION ~ ., data = train_data) %>%
+  step_mutate_at(all_numeric_predictors(), fn = as.factor) %>% 
+  step_other(all_nominal_predictors(), threshold = 0.001) %>% 
+  step_embed(all_nominal_predictors(), outcome = vars(ACTION)) %>%
+  step_zv(all_predictors())
+
+my_recipe2 <- recipe(ACTION ~ ., data = train_data) %>%
+  step_mutate_at(all_numeric_predictors(), fn = as.factor) %>% 
+  step_other(all_nominal_predictors(), threshold = 0.001) %>% 
+  step_embed(all_nominal_predictors(), outcome = vars(ACTION)) %>%
+  step_zv(all_predictors()) %>%
+  step_normalize(all_predictors()) %>%
+  step_pca(all_predictors(), threshold=.9)
 
